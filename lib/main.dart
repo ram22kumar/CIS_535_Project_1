@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:html';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
@@ -68,7 +67,7 @@ class _AccelerometerScreenState extends State<AccelerometerScreen> {
   List<FlSpot> dataPoints = [];
   List<FlSpot> meanPoints = [];
   List<FlSpot> variancePoints = [];
-  AccelerometerEvent _accelerometerEvent = AccelerometerEvent(0, 0, 0);
+  double maxVal = -99;
   late List<double> mainValues;
   List<AccelerometerEvent> _accelerometerEvents = [];
   late StreamSubscription<AccelerometerEvent> _accelerometerSubscription;
@@ -76,6 +75,9 @@ class _AccelerometerScreenState extends State<AccelerometerScreen> {
   double _accelerometerMainValueEvent(AccelerometerEvent event) {
     double value = sqrt(
         event.x * event.x + event.y * event.y * event.y + event.z + event.z);
+    if (value > (maxVal / 2)) {
+      maxVal = value * 2;
+    }
     dataPoints.add(FlSpot(dataPoints.length.toDouble(), value));
     return value;
   }
@@ -134,14 +136,21 @@ class _AccelerometerScreenState extends State<AccelerometerScreen> {
   @override
   void initState() {
     super.initState();
-    _accelerometerSubscription = accelerometerEvents.listen((event) {
+    _accelerometerSubscription = accelerometerEventStream().listen((event) {
       setState(() {
-        Timer.periodic(Duration(milliseconds: 100), (timer) {
-          _accelerometerEvent = event;
-          _accelerometerEvents.add(event);
+        Future.delayed(const Duration(milliseconds: 100), () {
+          // Timer.periodic(Duration(milliseconds: 100), (timer) {
+          if (!event.x.isNaN || !event.y.isNaN || !event.z.isNaN) {
+            _accelerometerEvents.add(event);
+            _accelerometerMainValueEvent(event);
+            _accelerometerMeanValueEvent(_accelerometerEvents);
+            _accelerometerVarianceValueEvent(event, _accelerometerEvents);
+          }
         });
       });
     });
+    // _accelerometerSubscription = accelerometerEvents.listen((event) {
+    // });
   }
 
   @override
@@ -156,75 +165,63 @@ class _AccelerometerScreenState extends State<AccelerometerScreen> {
       appBar: AppBar(
         title: const Text('Accelerometer Screen'),
       ),
-      body: Center(
-        child: Column(
+      body: Column(children: [
+        Expanded(
+          child: Container(
+              padding: const EdgeInsets.all(15),
+              child: LineChart(LineChartData(
+                  minX: 0,
+                  maxX: dataPoints.length.toDouble() + 10,
+                  minY: 0,
+                  maxY: maxVal + 10,
+                  titlesData: const FlTitlesData(
+                      leftTitles: AxisTitles(
+                          axisNameWidget: Text('Values ->'),
+                          sideTitles: SideTitles(showTitles: true)),
+                      bottomTitles: AxisTitles(
+                          axisNameWidget: Text('Time ->'),
+                          sideTitles: SideTitles(showTitles: true))),
+                  lineBarsData: [
+                    LineChartBarData(
+                        spots: dataPoints,
+                        isCurved: true,
+                        color: Colors.red,
+                        dotData: const FlDotData(show: true)),
+                    LineChartBarData(
+                        spots: meanPoints,
+                        isCurved: true,
+                        color: Colors.orange,
+                        dotData: const FlDotData(show: true)),
+                    LineChartBarData(
+                        spots: variancePoints,
+                        isCurved: true,
+                        color: Colors.blue,
+                        dotData: const FlDotData(show: true))
+                  ]))),
+        ),
+        Padding(
+          padding: EdgeInsets.all(15),
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Container(
-                  color: Colors.white,
-                  height: 400,
-                  width: 300,
-                  child: LineChart(LineChartData(
-                      minX: 0,
-                      maxX: dataPoints.length.toDouble(),
-                      minY: 0,
-                      titlesData: const FlTitlesData(
-                          leftTitles: AxisTitles(
-                              axisNameWidget: Text('Values ->'),
-                              sideTitles: SideTitles(showTitles: true)),
-                          bottomTitles: AxisTitles(
-                              axisNameWidget: Text('Time ->'),
-                              sideTitles: SideTitles(showTitles: true))),
-                      lineBarsData: [
-                        // LineChartBarData(
-                        //     spots: dataPoints,
-                        //     isCurved: false,
-                        //     color: Colors.red,
-                        //     dotData: FlDotData(show: true)),
-                        LineChartBarData(
-                            spots: meanPoints,
-                            isCurved: false,
-                            color: Colors.orange,
-                            dotData: FlDotData(show: true)),
-                        // LineChartBarData(
-                        //     spots: variancePoints,
-                        //     isCurved: true,
-                        //     color: Colors.blue,
-                        //     dotData: FlDotData(show: true))
-                      ]))),
-              Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Text(
-                        'Accelerometer Values:  X=> ${_accelerometerEvent.x.toStringAsFixed(2)}, Y=> ${_accelerometerEvent.y.toStringAsFixed(2)}, Z=> ${_accelerometerEvent.z.toStringAsFixed(2)}'),
-                    Text(
-                        'Square Value : ${_accelerometerMainValueEvent(_accelerometerEvent).toStringAsFixed(2)}'),
-                    Text(
-                        'Mean Square Value : ${_accelerometerMeanValueEvent(_accelerometerEvents).toStringAsFixed(2)}'),
-                    Text(
-                        'Variance value : ${_accelerometerVarianceValueEvent(_accelerometerEvent, _accelerometerEvents).toStringAsFixed(2)}')
-                  ])
-            ]),
-      ),
+            children: [
+              Text(
+                  'x=> ${_accelerometerEvents.last.x.toStringAsFixed(2)}, y=> ${_accelerometerEvents.last.y.toStringAsFixed(2)}, z=> ${_accelerometerEvents.last.z.toStringAsFixed(2)}'),
+              Text(
+                  'Main Value : ${dataPoints.isNotEmpty ? dataPoints.last.y.toStringAsFixed(2) : 'N/A'}',
+                  style: const TextStyle(color: Colors.red)),
+              Text(
+                  'Mean Value : ${meanPoints.isNotEmpty ? meanPoints.last.y.toStringAsFixed(2) : 'N/A'}',
+                  style: const TextStyle(color: Colors.orange)),
+              Text(
+                  'Variance Value : ${variancePoints.isNotEmpty ? variancePoints.last.y.toStringAsFixed(2) : 'N/A'}',
+                  style: const TextStyle(color: Colors.blue)),
+            ],
+          ),
+        )
+      ]),
     );
   }
 }
-
-// class AccelerometerScreen extends StatelessWidget {
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text('Accelerometer Screen'),
-//       ),
-//       body: Center(
-//         child: Text('Accelerometer data will be displayed here'),
-//       ),
-//     );
-//   }
-// }
 
 class GyroscopeScreen extends StatelessWidget {
   @override
